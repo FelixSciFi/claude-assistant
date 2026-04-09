@@ -208,6 +208,27 @@ const TOOL_LABELS = {
   manage_tracked: '📋 管理跟踪事项'
 };
 
+async function runBriefingChat(apiMessages, systemPrompt, user, res) {
+  let fullText = '';
+  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: systemPrompt, messages: apiMessages, tools: [MEMORY_TOOL] };
+  const stream = anthropic.messages.stream(params);
+  stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
+  const finalMsg = await stream.finalMessage();
+  if (finalMsg.stop_reason === 'tool_use') {
+    const toolResults = [];
+    for (const tu of finalMsg.content.filter(b => b.type === 'tool_use')) {
+      const result = await executeTool(tu.name, tu.input, user);
+      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
+    }
+    const continued = await runBriefingChat(
+      [...apiMessages, { role: 'assistant', content: finalMsg.content }, { role: 'user', content: toolResults }],
+      systemPrompt, user, res
+    );
+    return fullText + continued;
+  }
+  return fullText;
+}
+
 async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   if (depth > 3) return '';
   const useGmail = user === 'felix' && isGmailConfigured();
@@ -332,8 +353,8 @@ app.post('/api/briefing/generate', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   try {
     const systemPrompt = buildSystemPrompt(user, true);
-    const prompt = `今天是${dateStr}。请生成今天的工作简报：根据工作记忆中的内容，查看有无需要跟进的事项，如有需要可查询邮件或跟踪事项。简报要简洁，列出今日重点和待办提醒。`;
-    const fullText = await runChat([{ role: 'user', content: prompt }], systemPrompt, user, res);
+    const prompt = `今天是${dateStr}。请根据工作记忆的内容生成今天的工作简报，简洁列出今日重点和待办提醒。`;
+    const fullText = await runBriefingChat([{ role: 'user', content: prompt }], systemPrompt, user, res);
     const clean = fullText.replace(/\n\*[💾📧📤📋].*?\*\n/g, '').trim();
     db.prepare('INSERT OR REPLACE INTO briefings (user, date, content) VALUES (?, ?, ?)').run(user, today, clean);
     res.write(`data: ${JSON.stringify({ done: true, content: clean })}\n\n`);
