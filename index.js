@@ -1,6 +1,7 @@
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const Database = require('better-sqlite3');
+const { exec } = require('child_process');
 const app = express();
 const PORT = 3000;
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -134,6 +135,18 @@ app.post('/api/memory', (req, res) => {
   if (!content) return res.status(400).json({ error: 'No content' });
   db.prepare('INSERT INTO memory (content, user) VALUES (?, ?)').run(content, user || 'felix');
   res.json({ ok: true });
+});
+app.get('/admin/update', (req, res) => {
+  if (req.query.key !== 'felix2026dakar') return res.status(403).send('Forbidden');
+  exec('git -C /root/claude-assistant pull origin main', (err, stdout, stderr) => {
+    const output = stdout + stderr;
+    if (err) {
+      res.send('失败:\n' + output);
+    } else {
+      res.send('更新成功！\n' + output + '\n重启中...');
+      setTimeout(() => process.exit(0), 500);
+    }
+  });
 });
 app.listen(PORT, () => {
   console.log(`Claude running on http://localhost:${PORT}`);
