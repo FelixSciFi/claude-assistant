@@ -1,0 +1,17 @@
+{
+  "name": "assistant",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.86.1",
+    "better-sqlite3": "^12.8.0",
+    "express": "^5.2.1"
+  }
+}
