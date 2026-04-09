@@ -7,6 +7,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:wght@300;400&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+.lock-screen{position:fixed;inset:0;background:var(--bg);z-index:999;display:flex;align-items:center;justify-content:center}
+.lock-box{display:flex;flex-direction:column;align-items:center;gap:16px;width:260px}
+.lock-title{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;font-style:italic;color:var(--accent);letter-spacing:0.06em}
+.lock-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'DM Mono',monospace;font-size:18px;letter-spacing:0.2em;padding:10px 14px;outline:none;text-align:center;transition:border-color 0.2s}
+.lock-input:focus{border-color:var(--accent-dim)}
+.lock-error{font-family:'DM Mono',monospace;font-size:11px;color:#c0392b;letter-spacing:0.08em;min-height:16px}
 :root{--bg:#faf8f5;--surface:#f4f0eb;--surface2:#ede8e1;--border:#e0d8ce;--text:#2c2520;--text-dim:#b0a89e;--text-mid:#7a7068;--accent:#a07850;--accent-light:#e8d8c4;--accent-dim:#d4b896;--user-bg:#f9f6f2;--ai-bg:#faf8f5;--radius:4px;--sidebar:260px}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto Serif SC',serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 .app{display:flex;height:100dvh;overflow:hidden}
@@ -79,6 +85,13 @@ textarea:focus{border-color:var(--accent-dim)}
 </style>
 </head>
 <body>
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-box">
+    <div class="lock-title">Nicole</div>
+    <input class="lock-input" id="lockInput" type="password" placeholder="••••••" maxlength="20" onkeydown="if(event.key==='Enter')checkPassword()">
+    <div class="lock-error" id="lockError"></div>
+  </div>
+</div>
 <div class="app">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -131,6 +144,9 @@ textarea:focus{border-color:var(--accent-dim)}
   </div>
 </div>
 <script>
+const PWD='092430';
+function checkPassword(){const v=document.getElementById('lockInput').value;if(v===PWD){localStorage.setItem('nicole_auth','1');document.getElementById('lockScreen').style.display='none'}else{document.getElementById('lockError').textContent='密码错误';document.getElementById('lockInput').value=''}}
+if(localStorage.getItem('nicole_auth')==='1'){document.getElementById('lockScreen').style.display='none'}else{setTimeout(()=>document.getElementById('lockInput').focus(),100)}
 let currentConvId=null,isStreaming=false,conversations=[];
 async function loadConversations(){const res=await fetch('/api/conversations?user=nicole');conversations=await res.json();renderConvList();const last=localStorage.getItem('nicole_last_conv');const found=last&&conversations.find(c=>c.id===parseInt(last));if(found)selectConversation(found.id);else if(conversations.length>0)selectConversation(conversations[0].id)}
 function renderConvList(){const list=document.getElementById('convList');list.innerHTML='';conversations.forEach(conv=>{const div=document.createElement('div');div.className='conv-item'+(conv.id===currentConvId?' active':'');div.dataset.id=conv.id;div.innerHTML=`<span class="conv-name">${escHtml(conv.title)}</span><button class="conv-del" onclick="deleteConv(event,${conv.id})">x</button>`;div.addEventListener('click',e=>{if(!e.target.classList.contains('conv-del'))selectConversation(conv.id)});list.appendChild(div)})}
