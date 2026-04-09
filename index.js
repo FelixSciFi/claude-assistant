@@ -30,6 +30,8 @@ db.exec(`
 try { db.exec(`ALTER TABLE conversations ADD COLUMN user TEXT NOT NULL DEFAULT 'felix'`); } catch(e) {}
 try { db.exec(`ALTER TABLE memory ADD COLUMN user TEXT NOT NULL DEFAULT 'felix'`); } catch(e) {}
 
+const MEMORY_INSTRUCTION = `\n\n如果本次对话中出现值得长期记住的重要信息（如个人偏好、习惯、重要事实），在回复最末尾加上 [M: 简短描述]，否则不加任何标记。`;
+
 const SYSTEM_PROMPTS = {
   felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。`,
   nicole: `你是Nicole的私人AI助手，Nicole是Felix的妻子，目前在达喀尔生活。回答风格：温和体贴，中文为主。`
@@ -80,7 +82,7 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
   const u = user || 'felix';
   const memories = db.prepare('SELECT content FROM memory WHERE user = ? ORDER BY created_at DESC LIMIT 10').all(u);
   const memoryText = memories.length > 0 ? '\n\n记住的信息：\n' + memories.map(m => '- ' + m.content).join('\n') : '';
-  const systemPrompt = (SYSTEM_PROMPTS[u] || SYSTEM_PROMPTS.felix) + memoryText;
+  const systemPrompt = (SYSTEM_PROMPTS[u] || SYSTEM_PROMPTS.felix) + memoryText + MEMORY_INSTRUCTION;
   try {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -98,9 +100,15 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
       res.write(`data: ${JSON.stringify({ text })}\n\n`);
     });
     stream.on('finalMessage', () => {
+      // 提取并保存自动记忆
+      const memMatch = fullResponse.match(/\[M:\s*(.+?)\]\s*$/);
+      if (memMatch) {
+        db.prepare('INSERT INTO memory (content, user) VALUES (?, ?)').run(memMatch[1].trim(), u);
+        fullResponse = fullResponse.replace(/\s*\[M:\s*.+?\]\s*$/, '').trim();
+      }
       db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', fullResponse);
       const updated = db.prepare('SELECT title FROM conversations WHERE id = ?').get(id);
-      res.write(`data: ${JSON.stringify({ done: true, title: updated.title })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, title: updated.title, cleanText: fullResponse })}\n\n`);
       res.end();
     });
     stream.on('error', (err) => {
@@ -111,6 +119,15 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
     res.end();
   }
+});
+app.get('/api/memory', (req, res) => {
+  const user = req.query.user || 'felix';
+  const mems = db.prepare('SELECT * FROM memory WHERE user = ? ORDER BY created_at DESC').all(user);
+  res.json(mems);
+});
+app.delete('/api/memory/:id', (req, res) => {
+  db.prepare('DELETE FROM memory WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 app.post('/api/memory', (req, res) => {
   const { content, user } = req.body;
