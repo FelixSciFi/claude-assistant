@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const XLSX = require('xlsx');
 
 const CREDS_PATH = path.join(__dirname, 'gmail_credentials.json');
 const TOKEN_PATH = path.join(__dirname, 'gmail_token.json');
@@ -70,11 +71,28 @@ async function getEmailContent(messageId) {
   parseParts(data.payload.parts);
 
   const TEXT_TYPES = ['text/plain', 'text/csv', 'application/json', 'text/html'];
+  const EXCEL_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'application/octet-stream'];
   for (const att of attachments) {
-    if (TEXT_TYPES.includes(att.mimeType) && att.size < 50000 && att.id) {
+    if (!att.id) continue;
+    const isExcel = EXCEL_TYPES.includes(att.mimeType) || /\.(xlsx|xls)$/i.test(att.filename);
+    const isText = TEXT_TYPES.includes(att.mimeType);
+    if ((isText || isExcel) && att.size < 200000) {
       try {
         const { data: attData } = await gmail.users.messages.attachments.get({ userId: 'me', messageId, id: att.id });
-        att.content = Buffer.from(attData.data, 'base64url').toString('utf8').slice(0, 3000);
+        const buf = Buffer.from(attData.data, 'base64url');
+        if (isExcel) {
+          const wb = XLSX.read(buf, { type: 'buffer' });
+          let xlsText = '';
+          for (const sheetName of wb.SheetNames.slice(0, 3)) {
+            const ws = wb.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            xlsText += `[Sheet: ${sheetName}]\n`;
+            xlsText += rows.slice(0, 100).map(r => r.join('\t')).join('\n') + '\n';
+          }
+          att.content = xlsText.slice(0, 4000);
+        } else {
+          att.content = buf.toString('utf8').slice(0, 3000);
+        }
       } catch(e) {}
     }
   }

@@ -246,7 +246,7 @@ app.post('/api/memory', (req, res) => {
 
 app.get('/admin/update', (req, res) => {
   if (req.query.key !== 'felix2026dakar') return res.status(403).send('Forbidden');
-  exec('git -C /root/claude-assistant pull origin main', (err, stdout, stderr) => {
+  exec('git -C /root/claude-assistant pull origin main && npm --prefix /root/claude-assistant install --omit=dev', (err, stdout, stderr) => {
     const output = stdout + stderr;
     if (err) { res.send('失败:\n' + output); }
     else { res.send('更新成功！\n' + output + '\n重启中...'); setTimeout(() => process.exit(0), 500); }
