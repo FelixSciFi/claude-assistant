@@ -60,6 +60,10 @@ textarea:focus{border-color:var(--accent-dim)}
 .send-btn:disabled{background:var(--border);color:var(--text-dim);cursor:not-allowed;transform:none}
 .send-btn svg{width:16px;height:16px}
 .hint{margin-top:7px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);letter-spacing:0.04em}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99}
+.sidebar-backdrop.open{display:block}
+.sidebar-close{display:none;background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:2px 4px}
+@media(max-width:640px){.sidebar-close{display:block}}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;padding:20px}
 .overlay.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;width:100%;max-width:440px}
@@ -76,7 +80,10 @@ textarea:focus{border-color:var(--accent-dim)}
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-title">Claude</span>
-      <button class="new-btn" onclick="newConversation()" title="新对话">+</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="new-btn" onclick="newConversation()" title="新对话">+</button>
+        <button class="sidebar-close" onclick="closeSidebar()">×</button>
+      </div>
     </div>
     <div class="conv-list" id="convList"></div>
   </div>
@@ -105,6 +112,7 @@ textarea:focus{border-color:var(--accent-dim)}
     </div>
   </div>
 </div>
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 <div class="overlay" id="memoryOverlay" onclick="closeMemoryIfOutside(event)">
   <div class="modal">
     <h2>添加记忆</h2>
@@ -128,8 +136,10 @@ function scrollToBottom(){const c=document.getElementById('messages');c.scrollTo
 async function sendMessage(){if(isStreaming||!currentConvId)return;const input=document.getElementById('input');const message=input.value.trim();if(!message)return;input.value='';autoResize(input);isStreaming=true;document.getElementById('sendBtn').disabled=true;appendMessage('user',message);scrollToBottom();const container=document.getElementById('messages');const div=document.createElement('div');div.className='message assistant';div.innerHTML='<div class="avatar">AI</div><div class="content"><span class="cursor"></span></div>';container.appendChild(div);const contentEl=div.querySelector('.content');scrollToBottom();let fullText='';try{const res=await fetch('/api/conversations/'+currentConvId+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message})});const reader=res.body.getReader();const decoder=new TextDecoder();while(true){const{done,value}=await reader.read();if(done)break;const lines=decoder.decode(value).split('\n');for(const line of lines){if(!line.startsWith('data: '))continue;try{const data=JSON.parse(line.slice(6));if(data.text){fullText+=data.text;contentEl.innerHTML=escHtml(fullText)+'<span class="cursor"></span>';scrollToBottom()}if(data.done){contentEl.innerHTML=escHtml(fullText);if(data.title){const conv=conversations.find(c=>c.id===currentConvId);if(conv){conv.title=data.title;renderConvList();document.getElementById('convTitleDisplay').textContent=data.title}}}if(data.error)contentEl.innerHTML='<span style="color:#c0392b">错误: '+data.error+'</span>'}catch(e){}}}}catch(e){contentEl.innerHTML='<span style="color:#c0392b">连接错误，请重试</span>'}isStreaming=false;document.getElementById('sendBtn').disabled=false;input.focus()}
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px'}
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open')}
+function toggleSidebar(){const s=document.getElementById('sidebar');const b=document.getElementById('sidebarBackdrop');s.classList.toggle('open');b.classList.toggle('open')}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.remove('open')}
+function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebarBackdrop').classList.add('open')}
+;(function(){let tx=0,ty=0;document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx;const dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)<Math.abs(dy)*1.2)return;if(dx<-50&&document.getElementById('sidebar').classList.contains('open'))closeSidebar();if(dx>60&&tx<30&&!document.getElementById('sidebar').classList.contains('open'))openSidebar();},{passive:true});})()
 function openMemory(){document.getElementById('memoryOverlay').classList.add('open');document.getElementById('memoryInput').focus()}
 function closeMemory(){document.getElementById('memoryOverlay').classList.remove('open');document.getElementById('memoryInput').value=''}
 function closeMemoryIfOutside(e){if(e.target===document.getElementById('memoryOverlay'))closeMemory()}
