@@ -80,6 +80,7 @@ textarea:focus{border-color:var(--accent-dim)}
 .mem-textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'Noto Serif SC',serif;font-size:14px;font-weight:300;line-height:1.7;padding:10px 12px;resize:vertical;min-height:90px;outline:none;transition:border-color 0.2s}
 .mem-textarea:focus{border-color:var(--accent-dim)}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+@media(min-width:641px){.main{display:grid;grid-template-columns:320px 1fr;grid-template-rows:auto 1fr auto}.topbar{grid-column:1/-1}.briefing{grid-column:1;grid-row:2/4;border-right:1px solid var(--border);border-bottom:none;overflow-y:auto;display:flex;flex-direction:column}.briefing-header{cursor:default}.briefing-arrow{display:none}.briefing-body{display:block !important;flex:1;padding-bottom:16px}.briefing-text{max-height:none}.messages{grid-column:2;grid-row:2}.input-area{grid-column:2;grid-row:3}}
 @media(max-width:640px){.sidebar{position:fixed;top:0;left:0;height:100%;z-index:100;transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.sidebar-close{display:block}.menu-btn{display:block}.hint{display:none}.message{padding:14px 16px;gap:10px}.content{font-size:14px}.input-area{padding:10px 14px 14px}}
 </style>
 </head>
@@ -165,7 +166,7 @@ let workConvId=null,isStreaming=false,briefingOpen=false;
 
 function setTopbarDate(){const d=new Date();document.getElementById('topbarDate').textContent=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'short'});document.getElementById('briefingLabel').textContent=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric'})+'  简报'}
 
-function toggleBriefing(){briefingOpen=!briefingOpen;document.getElementById('briefingBody').classList.toggle('open',briefingOpen);document.getElementById('briefingArrow').textContent=briefingOpen?'▴':'▾'}
+function toggleBriefing(){if(window.innerWidth>640)return;briefingOpen=!briefingOpen;document.getElementById('briefingBody').classList.toggle('open',briefingOpen);document.getElementById('briefingArrow').textContent=briefingOpen?'▴':'▾'}
 
 async function loadBriefing(){const res=await fetch('/api/briefing/felix');const data=await res.json();const el=document.getElementById('briefingText');const btn=document.getElementById('briefingBtn');if(data&&data.content){el.textContent=data.content;btn.textContent='刷新简报'}else{el.innerHTML='<span style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-dim)">暂无简报</span>';btn.textContent='生成今日简报'}}
 
