@@ -2,7 +2,7 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const Database = require('better-sqlite3');
 const { exec } = require('child_process');
-const { isGmailConfigured, searchEmails, sendEmail } = require('./gmail');
+const { isGmailConfigured, searchEmails, sendEmail, getEmailContent } = require('./gmail');
 
 const app = express();
 const PORT = 3000;
@@ -79,6 +79,17 @@ const GMAIL_TOOLS = [
     }
   },
   {
+    name: 'get_email_content',
+    description: '读取某封邮件的完整正文和附件。先用search_gmail找到邮件ID，再用此工具读详情。文字类附件会返回内容，PDF/图片只列出名称。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        message_id: { type: 'string', description: '邮件ID，来自search_gmail结果' }
+      },
+      required: ['message_id']
+    }
+  },
+  {
     name: 'manage_tracked',
     description: '管理邮件跟踪事项：查看(list)、添加(add)、移除(remove)',
     input_schema: {
@@ -105,6 +116,10 @@ async function executeTool(name, input, user) {
       await sendEmail(input.to, input.subject, input.body);
       return `邮件已发送给 ${input.to}，主题：${input.subject}`;
     }
+    if (name === 'get_email_content') {
+      const content = await getEmailContent(input.message_id);
+      return JSON.stringify(content);
+    }
     if (name === 'manage_tracked') {
       if (input.action === 'list') {
         const items = db.prepare('SELECT * FROM tracked_items WHERE user = ? AND status = "active" ORDER BY created_at DESC').all(user);
@@ -124,7 +139,7 @@ async function executeTool(name, input, user) {
   }
 }
 
-const TOOL_LABELS = { search_gmail: '📧 搜索邮件', send_email: '📤 发送邮件', manage_tracked: '📋 管理跟踪事项' };
+const TOOL_LABELS = { search_gmail: '📧 搜索邮件', get_email_content: '📄 读取邮件内容', send_email: '📤 发送邮件', manage_tracked: '📋 管理跟踪事项' };
 
 async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   if (depth > 3) return '';
