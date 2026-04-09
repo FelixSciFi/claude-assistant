@@ -29,6 +29,19 @@ db.exec(`
     content TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS memory_doc (
+    user TEXT PRIMARY KEY,
+    personal TEXT DEFAULT '',
+    work TEXT DEFAULT '',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS briefings (
+    user TEXT NOT NULL,
+    date TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user, date)
+  );
   CREATE TABLE IF NOT EXISTS tracked_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user TEXT NOT NULL DEFAULT 'felix',
@@ -43,12 +56,56 @@ db.exec(`
 
 try { db.exec(`ALTER TABLE conversations ADD COLUMN user TEXT NOT NULL DEFAULT 'felix'`); } catch(e) {}
 try { db.exec(`ALTER TABLE memory ADD COLUMN user TEXT NOT NULL DEFAULT 'felix'`); } catch(e) {}
+try { db.exec(`ALTER TABLE conversations ADD COLUMN is_work INTEGER DEFAULT 0`); } catch(e) {}
 
-const MEMORY_INSTRUCTION = `\n\n如果本次对话中出现值得长期记住的重要信息（如个人偏好、习惯、重要事实），在回复最末尾加上 [M: 简短描述]，否则不加任何标记。`;
+function getMemoryDoc(user) {
+  let doc = db.prepare('SELECT personal, work FROM memory_doc WHERE user = ?').get(user);
+  if (!doc) {
+    let personal = '';
+    try {
+      const old = db.prepare('SELECT content FROM memory WHERE user = ? ORDER BY created_at ASC').all(user);
+      if (old.length > 0) personal = old.map(m => m.content).join('\n');
+    } catch(e) {}
+    db.prepare('INSERT OR IGNORE INTO memory_doc (user, personal, work) VALUES (?, ?, ?)').run(user, personal, '');
+    doc = { personal, work: '' };
+  }
+  return doc;
+}
+
+function upsertMemoryDoc(user, type, content) {
+  if (type === 'personal') {
+    db.prepare('INSERT INTO memory_doc (user, personal) VALUES (?, ?) ON CONFLICT(user) DO UPDATE SET personal = excluded.personal, updated_at = CURRENT_TIMESTAMP').run(user, content);
+  } else if (type === 'work') {
+    db.prepare('INSERT INTO memory_doc (user, work) VALUES (?, ?) ON CONFLICT(user) DO UPDATE SET work = excluded.work, updated_at = CURRENT_TIMESTAMP').run(user, content);
+  }
+}
 
 const SYSTEM_PROMPTS = {
-  felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。你有权访问Felix的Gmail，可搜索邮件、发邮件、管理跟踪事项。发邮件前必须先展示草稿让Felix确认再调用发送工具。`,
-  nicole: `你是Nicole的私人AI助手，Nicole是Felix的妻子，目前在达喀尔生活。回答风格：温和体贴，中文为主。`
+  felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。你有权访问Felix的Gmail，可搜索邮件、发邮件、管理跟踪事项。发邮件前必须先展示草稿让Felix确认再调用发送工具。当对话中出现值得长期记住的重要信息时，使用update_memory工具更新对应记忆（传入该类型完整的最新文本，会覆盖原有内容）。`,
+  nicole: `你是Nicole的私人AI助手，Nicole是Felix的妻子，目前在达喀尔生活。回答风格：温和体贴，中文为主。当对话中出现值得长期记住的重要信息时，使用update_memory工具更新对应记忆（传入该类型完整的最新文本，会覆盖原有内容）。`
+};
+
+function buildSystemPrompt(user, isWork = false) {
+  const base = SYSTEM_PROMPTS[user] || SYSTEM_PROMPTS.felix;
+  const doc = getMemoryDoc(user);
+  const workCtx = isWork ? '\n当前是工作对话模式，请专注处理工作相关事务。' : '';
+  let memText = '';
+  if (doc.personal) memText += `\n\n个人记忆：\n${doc.personal}`;
+  if (doc.work) memText += `\n\n工作记忆：\n${doc.work}`;
+  return base + workCtx + memText;
+}
+
+const MEMORY_TOOL = {
+  name: 'update_memory',
+  description: '更新记忆文档（会覆盖该类型原有内容）。在对话中发现值得长期记住的重要信息时调用，传入完整的最新文本。',
+  input_schema: {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['personal', 'work'], description: 'personal=个人记忆，work=工作记忆' },
+      content: { type: 'string', description: '完整的记忆内容（自由文本）' }
+    },
+    required: ['type', 'content']
+  }
 };
 
 const GMAIL_TOOLS = [
@@ -80,7 +137,7 @@ const GMAIL_TOOLS = [
   },
   {
     name: 'get_email_content',
-    description: '读取某封邮件的完整正文和附件。先用search_gmail找到邮件ID，再用此工具读详情。文字类附件会返回内容，PDF/图片只列出名称。',
+    description: '读取某封邮件的完整正文和附件。先用search_gmail找到邮件ID再调用。Excel附件会解析成表格文本。',
     input_schema: {
       type: 'object',
       properties: {
@@ -108,6 +165,10 @@ const GMAIL_TOOLS = [
 
 async function executeTool(name, input, user) {
   try {
+    if (name === 'update_memory') {
+      upsertMemoryDoc(user, input.type, input.content);
+      return `${input.type === 'personal' ? '个人' : '工作'}记忆已更新。`;
+    }
     if (name === 'search_gmail') {
       const results = await searchEmails(input.query, input.max_results || 10, input.days_back ?? 30);
       return results.length === 0 ? '没有找到相关邮件。' : JSON.stringify(results);
@@ -139,14 +200,20 @@ async function executeTool(name, input, user) {
   }
 }
 
-const TOOL_LABELS = { search_gmail: '📧 搜索邮件', get_email_content: '📄 读取邮件内容', send_email: '📤 发送邮件', manage_tracked: '📋 管理跟踪事项' };
+const TOOL_LABELS = {
+  update_memory: '💾 更新记忆',
+  search_gmail: '📧 搜索邮件',
+  get_email_content: '📄 读取邮件内容',
+  send_email: '📤 发送邮件',
+  manage_tracked: '📋 管理跟踪事项'
+};
 
 async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   if (depth > 3) return '';
-  const useTools = user === 'felix' && isGmailConfigured();
+  const useGmail = user === 'felix' && isGmailConfigured();
+  const tools = useGmail ? [MEMORY_TOOL, ...GMAIL_TOOLS] : [MEMORY_TOOL];
   let fullText = '';
-  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: systemPrompt, messages: apiMessages };
-  if (useTools) params.tools = GMAIL_TOOLS;
+  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
   const stream = anthropic.messages.stream(params);
   stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
   const finalMsg = await stream.finalMessage();
@@ -171,13 +238,14 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
 app.use(express.json());
 app.use(express.static('public'));
 
+// Conversations (casual only, is_work=0)
 app.get('/api/conversations', (req, res) => {
   const user = req.query.user || 'felix';
-  res.json(db.prepare('SELECT * FROM conversations WHERE user = ? ORDER BY updated_at DESC').all(user));
+  res.json(db.prepare('SELECT * FROM conversations WHERE user = ? AND is_work = 0 ORDER BY updated_at DESC').all(user));
 });
 app.post('/api/conversations', (req, res) => {
   const { title, user } = req.body;
-  const result = db.prepare('INSERT INTO conversations (title, user) VALUES (?, ?)').run(title || '新对话', user || 'felix');
+  const result = db.prepare('INSERT INTO conversations (title, user, is_work) VALUES (?, ?, 0)').run(title || '新对话', user || 'felix');
   res.json(db.prepare('SELECT * FROM conversations WHERE id = ?').get(result.lastInsertRowid));
 });
 app.delete('/api/conversations/:id', (req, res) => {
@@ -194,6 +262,18 @@ app.get('/api/conversations/:id/messages', (req, res) => {
   res.json(db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(req.params.id));
 });
 
+// Work conversation (auto-create if missing)
+app.get('/api/work-conversation/:user', (req, res) => {
+  const { user } = req.params;
+  let conv = db.prepare('SELECT * FROM conversations WHERE user = ? AND is_work = 1').get(user);
+  if (!conv) {
+    const result = db.prepare('INSERT INTO conversations (title, user, is_work) VALUES (?, ?, 1)').run('工作对话', user);
+    conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(result.lastInsertRowid);
+  }
+  res.json(conv);
+});
+
+// Chat
 app.post('/api/conversations/:id/chat', async (req, res) => {
   const { id } = req.params;
   const { message, user } = req.body;
@@ -201,24 +281,19 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
   db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'user', message);
   db.prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
   const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
-  if (conv.title === '新对话') db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(message.slice(0, 20).trim(), id);
+  if (conv.is_work === 0 && conv.title === '新对话') {
+    db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(message.slice(0, 20).trim(), id);
+  }
   const history = db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(id);
   const u = user || 'felix';
-  const memories = db.prepare('SELECT content FROM memory WHERE user = ? ORDER BY created_at DESC LIMIT 10').all(u);
-  const memoryText = memories.length > 0 ? '\n\n记住的信息：\n' + memories.map(m => '- ' + m.content).join('\n') : '';
-  const systemPrompt = (SYSTEM_PROMPTS[u] || SYSTEM_PROMPTS.felix) + memoryText + MEMORY_INSTRUCTION;
+  const systemPrompt = buildSystemPrompt(u, conv.is_work === 1);
   try {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     const apiMessages = history.slice(-20).map(m => ({ role: m.role, content: m.content }));
-    let fullResponse = await runChat(apiMessages, systemPrompt, u, res);
-    const memMatch = fullResponse.match(/\[M:\s*(.+?)\]\s*$/);
-    if (memMatch) {
-      db.prepare('INSERT INTO memory (content, user) VALUES (?, ?)').run(memMatch[1].trim(), u);
-      fullResponse = fullResponse.replace(/\s*\[M:\s*.+?\]\s*$/, '').trim();
-    }
-    const cleanResponse = fullResponse.replace(/\n\*[📧📤📋].*?\*\n/g, '').trim();
+    const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
+    const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋].*?\*\n/g, '').trim();
     db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', cleanResponse);
     const updated = db.prepare('SELECT title FROM conversations WHERE id = ?').get(id);
     res.write(`data: ${JSON.stringify({ done: true, title: updated.title, cleanText: cleanResponse })}\n\n`);
@@ -229,9 +304,50 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
   }
 });
 
+// Memory doc
+app.get('/api/memory-doc/:user', (req, res) => {
+  res.json(getMemoryDoc(req.params.user));
+});
+app.put('/api/memory-doc/:user', (req, res) => {
+  const { user } = req.params;
+  const { personal, work } = req.body;
+  if (personal !== undefined) upsertMemoryDoc(user, 'personal', personal);
+  if (work !== undefined) upsertMemoryDoc(user, 'work', work);
+  res.json({ ok: true });
+});
+
+// Briefing
+app.get('/api/briefing/:user', (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  res.json(db.prepare('SELECT * FROM briefings WHERE user = ? AND date = ?').get(req.params.user, today) || null);
+});
+
+app.post('/api/briefing/generate', async (req, res) => {
+  const { user } = req.body;
+  if (!user) return res.status(400).json({ error: 'No user' });
+  const today = new Date().toISOString().split('T')[0];
+  const dateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  try {
+    const systemPrompt = buildSystemPrompt(user, true);
+    const prompt = `今天是${dateStr}。请生成今天的工作简报：根据工作记忆中的内容，查看有无需要跟进的事项，如有需要可查询邮件或跟踪事项。简报要简洁，列出今日重点和待办提醒。`;
+    const fullText = await runChat([{ role: 'user', content: prompt }], systemPrompt, user, res);
+    const clean = fullText.replace(/\n\*[💾📧📤📋].*?\*\n/g, '').trim();
+    db.prepare('INSERT OR REPLACE INTO briefings (user, date, content) VALUES (?, ?, ?)').run(user, today, clean);
+    res.write(`data: ${JSON.stringify({ done: true, content: clean })}\n\n`);
+    res.end();
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+    res.end();
+  }
+});
+
+// Legacy memory endpoints
 app.get('/api/memory', (req, res) => {
   const user = req.query.user || 'felix';
-  res.json(db.prepare('SELECT * FROM memory WHERE user = ? ORDER BY created_at DESC').all(user));
+  res.json(getMemoryDoc(user));
 });
 app.delete('/api/memory/:id', (req, res) => {
   db.prepare('DELETE FROM memory WHERE id = ?').run(req.params.id);

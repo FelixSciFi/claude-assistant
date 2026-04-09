@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>工作台 · Felix</title>
+<title>闲聊 · Felix</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -19,29 +19,31 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto S
 .sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:transform 0.25s}
 .sidebar-header{padding:16px 14px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .sidebar-title{font-size:12px;font-family:'DM Mono',monospace;letter-spacing:0.14em;color:var(--accent);text-transform:uppercase}
+.sidebar-top{display:flex;gap:6px;align-items:center}
+.new-btn{background:none;border:1px solid var(--border);color:var(--text-mid);font-family:'DM Mono',monospace;font-size:18px;line-height:1;width:28px;height:28px;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+.new-btn:hover{border-color:var(--accent-dim);color:var(--accent)}
 .sidebar-close{display:none;background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:2px 4px}
-.sidebar-nav{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:2px}
-.nav-btn{background:none;border:none;color:var(--text-mid);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.1em;padding:9px 10px;cursor:pointer;border-radius:var(--radius);text-align:left;text-transform:uppercase;transition:all 0.15s;display:block;width:100%;text-decoration:none}
-.nav-btn:hover{background:var(--surface2);color:var(--text)}
-.nav-btn.active{background:var(--surface2);border-left:2px solid var(--accent);color:var(--accent);padding-left:8px}
-.nav-sep{height:1px;background:var(--border);margin:4px 2px}
+.sidebar-footer{border-top:1px solid var(--border);padding:8px}
+.nav-link{background:none;border:none;color:var(--text-dim);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.1em;padding:8px 10px;cursor:pointer;border-radius:var(--radius);text-align:left;text-transform:uppercase;transition:all 0.15s;display:block;width:100%;text-decoration:none}
+.nav-link:hover{background:var(--surface2);color:var(--text)}
+.conv-list{flex:1;overflow-y:auto;padding:6px}
+.conv-list::-webkit-scrollbar{width:3px}
+.conv-list::-webkit-scrollbar-thumb{background:var(--border)}
+.conv-item{padding:9px 10px;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:6px;transition:background 0.15s;margin-bottom:1px}
+.conv-item:hover{background:var(--surface2)}
+.conv-item.active{background:var(--surface2);border-left:2px solid var(--accent);padding-left:8px}
+.conv-name{font-size:13px;color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;line-height:1.4}
+.conv-item.active .conv-name{color:var(--text)}
+.conv-del{background:none;border:none;color:transparent;cursor:pointer;font-size:14px;flex-shrink:0;padding:2px;line-height:1;transition:color 0.15s}
+.conv-item:hover .conv-del{color:var(--text-dim)}
+.conv-del:hover{color:#c0392b !important}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .topbar{display:flex;align-items:center;padding:12px 20px 10px;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
 .menu-btn{display:none;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px;padding:2px}
-.topbar-title{font-size:12px;font-family:'DM Mono',monospace;letter-spacing:0.08em;color:var(--text-mid);flex:1}
+.conv-title-display{font-size:13px;color:var(--text-mid);font-family:'DM Mono',monospace;letter-spacing:0.05em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-actions{display:flex;gap:6px}
 .btn-sm{background:none;border:1px solid var(--border);color:var(--text-dim);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.08em;padding:4px 10px;cursor:pointer;border-radius:var(--radius);transition:all 0.15s;text-transform:uppercase;text-decoration:none;display:inline-block}
 .btn-sm:hover{border-color:var(--accent-dim);color:var(--accent)}
-.btn-sm:disabled{opacity:0.4;cursor:not-allowed}
-.briefing{border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface)}
-.briefing-header{display:flex;align-items:center;padding:10px 20px;gap:10px;cursor:pointer;user-select:none}
-.briefing-date{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.1em;color:var(--accent);text-transform:uppercase;flex:1}
-.briefing-arrow{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim)}
-.briefing-body{padding:0 20px 14px;display:none}
-.briefing-body.open{display:block}
-.briefing-text{font-size:13px;line-height:1.8;color:var(--text-mid);white-space:pre-wrap;word-break:break-word;max-height:180px;overflow-y:auto}
-.briefing-text::-webkit-scrollbar{width:3px}
-.briefing-text::-webkit-scrollbar-thumb{background:var(--border)}
-.briefing-actions{margin-top:8px;display:flex;gap:6px}
 .messages{flex:1;overflow-y:auto;scroll-behavior:smooth}
 .messages::-webkit-scrollbar{width:3px}
 .messages::-webkit-scrollbar-thumb{background:var(--border)}
@@ -59,6 +61,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto S
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;opacity:0.3}
 .empty-glyph{font-size:36px;color:var(--accent);font-family:'DM Mono',monospace}
 .empty-label{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase}
+.no-conv{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;opacity:0.3}
+.no-conv p{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.1em;color:var(--text-dim);text-transform:uppercase}
 .input-area{border-top:1px solid var(--border);padding:14px 20px 18px;flex-shrink:0;background:var(--surface)}
 .input-row{display:flex;gap:8px;align-items:flex-end}
 textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'Noto Serif SC',serif;font-size:15px;font-weight:300;line-height:1.6;padding:10px 13px;resize:none;min-height:44px;max-height:150px;outline:none;transition:border-color 0.2s}
@@ -86,7 +90,7 @@ textarea:focus{border-color:var(--accent-dim)}
 <body>
 <div class="lock-screen" id="lockScreen">
   <div class="lock-box">
-    <div class="lock-title">Felix · 工作台</div>
+    <div class="lock-title">Felix · 闲聊</div>
     <input class="lock-input" id="lockInput" type="password" placeholder="••••••" maxlength="20" onkeydown="if(event.key==='Enter')checkPassword()">
     <div class="lock-error" id="lockError"></div>
   </div>
@@ -94,37 +98,30 @@ textarea:focus{border-color:var(--accent-dim)}
 <div class="app">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">工作台</span>
-      <button class="sidebar-close" onclick="closeSidebar()">×</button>
+      <span class="sidebar-title">闲聊</span>
+      <div class="sidebar-top">
+        <button class="new-btn" onclick="newConversation()" title="新对话">+</button>
+        <button class="sidebar-close" onclick="closeSidebar()">×</button>
+      </div>
     </div>
-    <div class="sidebar-nav">
-      <span class="nav-btn active">工 作</span>
-      <div class="nav-sep"></div>
-      <a class="nav-btn" href="/casual.html">闲 聊</a>
-      <div class="nav-sep"></div>
-      <button class="nav-btn" onclick="openMemory();closeSidebar()">记 忆</button>
+    <div class="conv-list" id="convList"></div>
+    <div class="sidebar-footer">
+      <a class="nav-link" href="/index.html">← 工作台</a>
     </div>
   </div>
   <div class="main">
     <div class="topbar">
       <button class="menu-btn" onclick="toggleSidebar()">☰</button>
-      <div class="topbar-title" id="topbarDate"></div>
-      <button class="btn-sm" onclick="openMemory()">记忆</button>
-    </div>
-    <div class="briefing" id="briefingSection">
-      <div class="briefing-header" onclick="toggleBriefing()">
-        <span class="briefing-date" id="briefingLabel">今日简报</span>
-        <span class="briefing-arrow" id="briefingArrow">▾</span>
-      </div>
-      <div class="briefing-body" id="briefingBody">
-        <div class="briefing-text" id="briefingText"><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">加载中...</span></div>
-        <div class="briefing-actions">
-          <button class="btn-sm" id="briefingBtn" onclick="generateBriefing()">生成今日简报</button>
-        </div>
+      <div class="conv-title-display" id="convTitleDisplay">选择或新建对话</div>
+      <div class="topbar-actions">
+        <button class="btn-sm" onclick="openMemory()">记忆</button>
       </div>
     </div>
     <div class="messages" id="messages">
-      <div class="empty"><div class="empty-glyph">W</div><div class="empty-label">开始工作对话</div></div>
+      <div class="no-conv" id="noConv">
+        <div style="font-size:32px;color:var(--accent);font-family:'DM Mono',monospace">C</div>
+        <p>新建或选择对话</p>
+      </div>
     </div>
     <div class="input-area">
       <div class="input-row">
@@ -157,26 +154,26 @@ textarea:focus{border-color:var(--accent-dim)}
 </div>
 <script>
 const PWD='092430';
-function checkPassword(){const v=document.getElementById('lockInput').value;if(v===PWD){localStorage.setItem('felix_auth','1');document.getElementById('lockScreen').style.display='none';init()}else{document.getElementById('lockError').textContent='密码错误';document.getElementById('lockInput').value=''}}
+function checkPassword(){const v=document.getElementById('lockInput').value;if(v===PWD){localStorage.setItem('felix_auth','1');document.getElementById('lockScreen').style.display='none';loadConversations()}else{document.getElementById('lockError').textContent='密码错误';document.getElementById('lockInput').value=''}}
 if(localStorage.getItem('felix_auth')==='1'){document.getElementById('lockScreen').style.display='none'}else{setTimeout(()=>document.getElementById('lockInput').focus(),100)}
 
-let workConvId=null,isStreaming=false,briefingOpen=false;
+let currentConvId=null,isStreaming=false,conversations=[];
 
-function setTopbarDate(){const d=new Date();document.getElementById('topbarDate').textContent=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'short'});document.getElementById('briefingLabel').textContent=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric'})+'  简报'}
+async function loadConversations(){const res=await fetch('/api/conversations?user=felix');conversations=await res.json();renderConvList();const last=localStorage.getItem('felix_casual_last');const found=last&&conversations.find(c=>c.id===parseInt(last));if(found)selectConversation(found.id);else if(conversations.length>0)selectConversation(conversations[0].id)}
 
-function toggleBriefing(){briefingOpen=!briefingOpen;document.getElementById('briefingBody').classList.toggle('open',briefingOpen);document.getElementById('briefingArrow').textContent=briefingOpen?'▴':'▾'}
+function renderConvList(){const list=document.getElementById('convList');list.innerHTML='';conversations.forEach(conv=>{const div=document.createElement('div');div.className='conv-item'+(conv.id===currentConvId?' active':'');div.innerHTML=`<span class="conv-name">${esc(conv.title)}</span><button class="conv-del" onclick="deleteConv(event,${conv.id})">x</button>`;div.addEventListener('click',e=>{if(!e.target.classList.contains('conv-del'))selectConversation(conv.id)});list.appendChild(div)})}
 
-async function loadBriefing(){const res=await fetch('/api/briefing/felix');const data=await res.json();const el=document.getElementById('briefingText');const btn=document.getElementById('briefingBtn');if(data&&data.content){el.textContent=data.content;btn.textContent='刷新简报'}else{el.innerHTML='<span style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-dim)">暂无简报</span>';btn.textContent='生成今日简报'}}
+async function newConversation(){const res=await fetch('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:'felix'})});const conv=await res.json();conversations.unshift(conv);renderConvList();selectConversation(conv.id);closeSidebar()}
 
-async function generateBriefing(){const el=document.getElementById('briefingText');const btn=document.getElementById('briefingBtn');btn.disabled=true;btn.textContent='生成中...';if(!briefingOpen)toggleBriefing();el.textContent='';let text='';try{const res=await fetch('/api/briefing/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:'felix'})});const reader=res.body.getReader();const dec=new TextDecoder();while(true){const{done,value}=await reader.read();if(done)break;for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;try{const d=JSON.parse(line.slice(6));if(d.text){text+=d.text;el.textContent=text}if(d.done)btn.textContent='刷新简报'}catch(e){}}}}catch(e){el.textContent='生成失败，请重试'}btn.disabled=false}
+async function deleteConv(e,id){e.stopPropagation();if(!confirm('删除这个对话？'))return;await fetch('/api/conversations/'+id,{method:'DELETE'});conversations=conversations.filter(c=>c.id!==id);if(currentConvId===id){currentConvId=null;document.getElementById('messages').innerHTML='<div class="no-conv"><div style="font-size:32px;color:var(--accent);font-family:\'DM Mono\',monospace">C</div><p>新建或选择对话</p></div>';document.getElementById('convTitleDisplay').textContent='选择或新建对话'}renderConvList()}
 
-async function loadWorkConv(){const res=await fetch('/api/work-conversation/felix');const conv=await res.json();workConvId=conv.id;const msgs=await fetch('/api/conversations/'+conv.id+'/messages').then(r=>r.json());const c=document.getElementById('messages');c.innerHTML='';if(msgs.length===0){c.innerHTML='<div class="empty"><div class="empty-glyph">W</div><div class="empty-label">开始工作对话</div></div>'}else{msgs.forEach(m=>appendMsg(m.role,m.content,false));scrollBot()}document.getElementById('input').focus()}
+async function selectConversation(id){currentConvId=id;localStorage.setItem('felix_casual_last',id);renderConvList();const conv=conversations.find(c=>c.id===id);document.getElementById('convTitleDisplay').textContent=conv?conv.title:'';const res=await fetch('/api/conversations/'+id+'/messages');const msgs=await res.json();const c=document.getElementById('messages');c.innerHTML='';if(msgs.length===0){c.innerHTML='<div class="empty"><div class="empty-glyph">C</div><div class="empty-label">开始对话</div></div>'}else{msgs.forEach(m=>appendMsg(m.role,m.content,false));scrollBot()}document.getElementById('input').focus()}
 
-function appendMsg(role,content,animate=true){const c=document.getElementById('messages');const e=c.querySelector('.empty');if(e)e.remove();const d=document.createElement('div');d.className='message '+role;if(!animate)d.style.animation='none';d.innerHTML='<div class="avatar">'+(role==='user'?'YOU':'AI')+'</div><div class="content">'+esc(content)+'</div>';c.appendChild(d);return d.querySelector('.content')}
+function appendMsg(role,content,animate=true){const c=document.getElementById('messages');const e=c.querySelector('.empty,.no-conv');if(e)e.remove();const d=document.createElement('div');d.className='message '+role;if(!animate)d.style.animation='none';d.innerHTML='<div class="avatar">'+(role==='user'?'YOU':'AI')+'</div><div class="content">'+esc(content)+'</div>';c.appendChild(d);return d.querySelector('.content')}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function scrollBot(){const c=document.getElementById('messages');c.scrollTop=c.scrollHeight}
 
-async function sendMessage(){if(isStreaming||!workConvId)return;const inp=document.getElementById('input');const msg=inp.value.trim();if(!msg)return;inp.value='';autoResize(inp);isStreaming=true;document.getElementById('sendBtn').disabled=true;appendMsg('user',msg);scrollBot();const c=document.getElementById('messages');const d=document.createElement('div');d.className='message assistant';d.innerHTML='<div class="avatar">AI</div><div class="content"><span class="cursor"></span></div>';c.appendChild(d);const cel=d.querySelector('.content');scrollBot();let full='';try{const res=await fetch('/api/conversations/'+workConvId+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,user:'felix'})});const reader=res.body.getReader();const dec=new TextDecoder();while(true){const{done,value}=await reader.read();if(done)break;for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;try{const data=JSON.parse(line.slice(6));if(data.text){full+=data.text;cel.innerHTML=esc(full)+'<span class="cursor"></span>';scrollBot()}if(data.done)cel.innerHTML=esc(data.cleanText||full);if(data.error)cel.innerHTML='<span style="color:#c0392b">错误: '+data.error+'</span>'}catch(e){}}}}catch(e){cel.innerHTML='<span style="color:#c0392b">连接错误，请重试</span>'}isStreaming=false;document.getElementById('sendBtn').disabled=false;inp.focus()}
+async function sendMessage(){if(isStreaming)return;if(!currentConvId){const res=await fetch('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:'felix'})});const conv=await res.json();conversations.unshift(conv);currentConvId=conv.id;localStorage.setItem('felix_casual_last',conv.id);renderConvList();document.getElementById('convTitleDisplay').textContent=conv.title}const inp=document.getElementById('input');const msg=inp.value.trim();if(!msg)return;inp.value='';autoResize(inp);isStreaming=true;document.getElementById('sendBtn').disabled=true;appendMsg('user',msg);scrollBot();const c=document.getElementById('messages');const d=document.createElement('div');d.className='message assistant';d.innerHTML='<div class="avatar">AI</div><div class="content"><span class="cursor"></span></div>';c.appendChild(d);const cel=d.querySelector('.content');scrollBot();let full='';try{const res=await fetch('/api/conversations/'+currentConvId+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,user:'felix'})});const reader=res.body.getReader();const dec=new TextDecoder();while(true){const{done,value}=await reader.read();if(done)break;for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;try{const data=JSON.parse(line.slice(6));if(data.text){full+=data.text;cel.innerHTML=esc(full)+'<span class="cursor"></span>';scrollBot()}if(data.done){cel.innerHTML=esc(data.cleanText||full);if(data.title){const conv=conversations.find(c=>c.id===currentConvId);if(conv){conv.title=data.title;renderConvList();document.getElementById('convTitleDisplay').textContent=data.title}}}if(data.error)cel.innerHTML='<span style="color:#c0392b">错误: '+data.error+'</span>'}catch(e){}}}}catch(e){cel.innerHTML='<span style="color:#c0392b">连接错误，请重试</span>'}isStreaming=false;document.getElementById('sendBtn').disabled=false;inp.focus()}
 
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px'}
@@ -189,8 +186,7 @@ function closeMemory(){document.getElementById('memoryOverlay').classList.remove
 function closeMemoryIfOutside(e){if(e.target===document.getElementById('memoryOverlay'))closeMemory()}
 async function saveMemory(){await fetch('/api/memory-doc/felix',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({personal:document.getElementById('personalMemory').value,work:document.getElementById('workMemory').value})});closeMemory()}
 
-function init(){setTopbarDate();loadBriefing();loadWorkConv()}
-if(localStorage.getItem('felix_auth')==='1')init();
+if(localStorage.getItem('felix_auth')==='1')loadConversations();
 </script>
 </body>
 </html>

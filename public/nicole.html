@@ -135,11 +135,13 @@ textarea:focus{border-color:var(--accent-dim)}
 <div class="overlay" id="memoryOverlay" onclick="closeMemoryIfOutside(event)">
   <div class="modal">
     <h2>记忆</h2>
-    <div id="memoryList" style="max-height:200px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:6px"></div>
-    <textarea id="memoryInput" placeholder="手动添加记忆..."></textarea>
+    <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:0.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px">个人记忆</div>
+    <textarea id="personalMemory" placeholder="关于你的信息、偏好、习惯..." style="width:100%;min-height:90px;resize:vertical;margin-bottom:12px"></textarea>
+    <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:0.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px">工作记忆</div>
+    <textarea id="workMemory" placeholder="工作背景、重要事项..." style="width:100%;min-height:90px;resize:vertical;margin-bottom:12px"></textarea>
     <div class="modal-actions">
-      <button class="btn-sm" onclick="closeMemory()">关闭</button>
-      <button class="btn-sm" onclick="saveMemory()" style="border-color:var(--accent-dim);color:var(--accent)">添加</button>
+      <button class="btn-sm" onclick="closeMemory()">取消</button>
+      <button class="btn-sm" onclick="saveMemory()" style="border-color:var(--accent-dim);color:var(--accent)">保存</button>
     </div>
   </div>
 </div>
@@ -163,12 +165,10 @@ function toggleSidebar(){const s=document.getElementById('sidebar');const b=docu
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.remove('open')}
 function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebarBackdrop').classList.add('open')}
 ;(function(){let tx=0,ty=0;document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx;const dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)<Math.abs(dy)*1.2)return;if(dx<-50&&document.getElementById('sidebar').classList.contains('open'))closeSidebar();if(dx>60&&tx<30&&!document.getElementById('sidebar').classList.contains('open'))openSidebar();},{passive:true});}())
-async function openMemory(){document.getElementById('memoryOverlay').classList.add('open');document.getElementById('memoryInput').value='';await loadMemoryList()}
+async function openMemory(){document.getElementById('memoryOverlay').classList.add('open');const r=await fetch('/api/memory-doc/nicole');const d=await r.json();document.getElementById('personalMemory').value=d.personal||'';document.getElementById('workMemory').value=d.work||''}
 function closeMemory(){document.getElementById('memoryOverlay').classList.remove('open')}
 function closeMemoryIfOutside(e){if(e.target===document.getElementById('memoryOverlay'))closeMemory()}
-async function loadMemoryList(){const res=await fetch('/api/memory?user=nicole');const mems=await res.json();const list=document.getElementById('memoryList');if(mems.length===0){list.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-dim);text-align:center;padding:8px">暂无记忆</div>';return}list.innerHTML=mems.map(m=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;background:var(--surface2);border-radius:var(--radius)"><span style="flex:1;font-size:13px;color:var(--text-mid);line-height:1.5">${escHtml(m.content)}</span><button onclick="deleteMemory(${m.id})" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;flex-shrink:0;padding:0;line-height:1" title="删除">×</button></div>`).join('')}
-async function deleteMemory(id){await fetch('/api/memory/'+id,{method:'DELETE'});await loadMemoryList()}
-async function saveMemory(){const content=document.getElementById('memoryInput').value.trim();if(!content)return;await fetch('/api/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,user:'nicole'})});document.getElementById('memoryInput').value='';await loadMemoryList()}
+async function saveMemory(){await fetch('/api/memory-doc/nicole',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({personal:document.getElementById('personalMemory').value,work:document.getElementById('workMemory').value})});closeMemory()}
 loadConversations();
 </script>
 </body>
