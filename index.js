@@ -210,7 +210,7 @@ const TOOL_LABELS = {
 
 async function runBriefingChat(apiMessages, systemPrompt, user, res) {
   let fullText = '';
-  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: systemPrompt, messages: apiMessages, tools: [MEMORY_TOOL] };
+  const params = { model: 'claude-sonnet-4-5', max_tokens: 1024, system: systemPrompt, messages: apiMessages, tools: [MEMORY_TOOL] };
   const stream = anthropic.messages.stream(params);
   stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
   const finalMsg = await stream.finalMessage();
@@ -234,7 +234,7 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   const useGmail = user === 'felix' && isGmailConfigured();
   const tools = useGmail ? [MEMORY_TOOL, ...GMAIL_TOOLS] : [MEMORY_TOOL];
   let fullText = '';
-  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
+  const params = { model: 'claude-sonnet-4-5', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
   const stream = anthropic.messages.stream(params);
   stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
   const finalMsg = await stream.finalMessage();
