@@ -14,7 +14,7 @@
 .lock-input:focus{border-color:var(--accent-dim)}
 .lock-error{font-family:'DM Mono',monospace;font-size:11px;color:#c0392b;letter-spacing:0.08em;min-height:16px}
 :root{--bg:#faf8f5;--surface:#f4f0eb;--surface2:#ede8e1;--border:#e0d8ce;--text:#2c2520;--text-dim:#b0a89e;--text-mid:#7a7068;--accent:#a07850;--accent-light:#e8d8c4;--accent-dim:#d4b896;--user-bg:#f9f6f2;--ai-bg:#faf8f5;--radius:4px;--sidebar:260px}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto Serif SC',serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto Serif SC',serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}html{font-size:100%}body{font-size:clamp(0.875rem,2.5vw,1.125rem)}
 .app{display:flex;height:100dvh;overflow:hidden}
 .sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:transform 0.25s}
 .sidebar-header{padding:20px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
@@ -52,7 +52,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto S
 .avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:12px;flex-shrink:0;margin-top:3px;font-style:italic}
 .message.user .avatar{background:var(--accent-light);color:var(--accent);border:1px solid var(--accent-dim)}
 .message.assistant .avatar{background:var(--surface2);color:var(--text-mid);border:1px solid var(--border)}
-.content{flex:1;font-size:15px;line-height:1.85;white-space:pre-wrap;word-break:break-word}
+.content{flex:1;font-size:1em;line-height:1.85;white-space:pre-wrap;word-break:break-word}
 .message.user .content{color:var(--text-mid)}
 .message.assistant .content{color:var(--text)}
 .cursor{display:inline-block;width:1.5px;height:1em;background:var(--accent);margin-left:1px;vertical-align:text-bottom;animation:blink 1s step-end infinite}
@@ -65,7 +65,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Noto S
 .no-conv p{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase}
 .input-area{border-top:1px solid var(--border);padding:14px 24px 20px;flex-shrink:0;background:var(--surface)}
 .input-row{display:flex;gap:8px;align-items:flex-end}
-textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'Noto Serif SC',serif;font-size:15px;font-weight:300;line-height:1.6;padding:10px 14px;resize:none;min-height:44px;max-height:150px;outline:none;transition:border-color 0.2s}
+textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'Noto Serif SC',serif;font-size:1em;font-weight:300;line-height:1.6;padding:10px 14px;resize:none;min-height:44px;max-height:150px;outline:none;transition:border-color 0.2s}
 textarea::placeholder{color:var(--text-dim)}
 textarea:focus{border-color:var(--accent-dim)}
 .send-btn{width:44px;height:44px;background:var(--accent);border:none;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;color:#faf8f5}
