@@ -6,7 +6,10 @@ const { isGmailConfigured, searchEmails, sendEmail, getEmailContent } = require(
 
 const app = express();
 const PORT = 3000;
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  defaultHeaders: { 'anthropic-beta': 'web-search-2025-03-05' }
+});
 const db = new Database('./memory.db');
 
 db.exec(`
@@ -205,7 +208,8 @@ const TOOL_LABELS = {
   search_gmail: '📧 搜索邮件',
   get_email_content: '📄 读取邮件内容',
   send_email: '📤 发送邮件',
-  manage_tracked: '📋 管理跟踪事项'
+  manage_tracked: '📋 管理跟踪事项',
+  web_search: '🔍 搜索网络'
 };
 
 async function runBriefingChat(apiMessages, systemPrompt, user, res) {
@@ -233,9 +237,15 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   if (depth > 3) return '';
   const useGmail = user === 'felix' && isGmailConfigured();
   const tools = useGmail ? [MEMORY_TOOL, ...GMAIL_TOOLS] : [MEMORY_TOOL];
+  tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 5 });
   let fullText = '';
   const params = { model: 'claude-sonnet-4-5', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
   const stream = anthropic.messages.stream(params);
+  stream.on('streamEvent', (event) => {
+    if (event.type === 'content_block_start' && event.content_block?.type === 'server_tool_use' && event.content_block?.name === 'web_search') {
+      res.write(`data: ${JSON.stringify({ text: '\n*🔍 搜索中...*\n' })}\n\n`);
+    }
+  });
   stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
   const finalMsg = await stream.finalMessage();
   if (finalMsg.stop_reason === 'tool_use') {
@@ -314,7 +324,7 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     const apiMessages = history.slice(-20).map(m => ({ role: m.role, content: m.content }));
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
-    const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋].*?\*\n/g, '').trim();
+    const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
     db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', cleanResponse);
     const updated = db.prepare('SELECT title FROM conversations WHERE id = ?').get(id);
     res.write(`data: ${JSON.stringify({ done: true, title: updated.title, cleanText: cleanResponse })}\n\n`);
