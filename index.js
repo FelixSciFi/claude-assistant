@@ -2,7 +2,10 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const Database = require('better-sqlite3');
 const { exec } = require('child_process');
+const multer = require('multer');
 const { isGmailConfigured, searchEmails, sendEmail, getEmailContent } = require('./gmail');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const app = express();
 const PORT = 3000;
@@ -305,15 +308,31 @@ app.get('/api/work-conversation/:user', (req, res) => {
 });
 
 // Chat
-app.post('/api/conversations/:id/chat', async (req, res) => {
+app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) => {
   const { id } = req.params;
   const { message, user } = req.body;
-  if (!message) return res.status(400).json({ error: 'No message' });
-  db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'user', message);
+  const file = req.file;
+  if (!message && !file) return res.status(400).json({ error: 'No message or file' });
+
+  let userMessageContent = message || '';
+  if (file) {
+    const isImage = /^image\//i.test(file.mimetype);
+    if (isImage) {
+      const base64 = file.buffer.toString('base64');
+      userMessageContent += (userMessageContent ? '\n' : '') + `[图片: ${file.originalname}]<image_data type="${file.mimetype}" base64="${base64}"/>`;
+    } else {
+      let content = file.buffer.toString('utf8');
+      if (content.length > 10000) content = content.substring(0, 10000) + '\n...(已截断)';
+      userMessageContent += (userMessageContent ? '\n\n' : '') + `[文件: ${file.originalname}]\n\`\`\`\n${content}\n\`\`\``;
+    }
+  }
+
+  db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'user', userMessageContent);
   db.prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
   const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
   if (conv.is_work === 0 && conv.title === '新对话') {
-    db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(message.slice(0, 20).trim(), id);
+    const titleText = message || file.originalname;
+    db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(titleText.slice(0, 20).trim(), id);
   }
   const history = db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(id);
   const u = user || 'felix';
@@ -322,7 +341,18 @@ app.post('/api/conversations/:id/chat', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const apiMessages = history.slice(-20).map(m => ({ role: m.role, content: m.content }));
+    const apiMessages = history.slice(-20).map(m => {
+      const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
+      if (imgMatch) {
+        const [, mediaType, base64] = imgMatch;
+        const textPart = m.content.replace(/\[图片:[^\]]+\]<image_data[^/]*\/>/, '').trim();
+        const parts = [];
+        if (textPart) parts.push({ type: 'text', text: textPart });
+        parts.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
+        return { role: m.role, content: parts };
+      }
+      return { role: m.role, content: m.content };
+    });
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
     db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', cleanResponse);
