@@ -253,6 +253,8 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   const finalMsg = await stream.finalMessage();
   if (finalMsg.stop_reason === 'tool_use') {
     const toolUseBlocks = finalMsg.content.filter(b => b.type === 'tool_use');
+    // 只有 server tool（web_search）触发时，无需客户端处理，直接返回
+    if (toolUseBlocks.length === 0) return fullText;
     const toolResults = [];
     for (const tu of toolUseBlocks) {
       const label = TOOL_LABELS[tu.name] || tu.name;
@@ -260,8 +262,10 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
       const result = await executeTool(tu.name, tu.input, user);
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
     }
+    // 过滤掉 server_tool_use 块，避免传回 API 时报错
+    const assistantContent = finalMsg.content.filter(b => b.type !== 'server_tool_use');
     const continued = await runChat(
-      [...apiMessages, { role: 'assistant', content: finalMsg.content }, { role: 'user', content: toolResults }],
+      [...apiMessages, { role: 'assistant', content: assistantContent }, { role: 'user', content: toolResults }],
       systemPrompt, user, res, depth + 1
     );
     return fullText + continued;
