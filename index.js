@@ -217,7 +217,7 @@ const TOOL_LABELS = {
 
 async function runBriefingChat(apiMessages, systemPrompt, user, res) {
   let fullText = '';
-  const params = { model: 'claude-sonnet-4-5', max_tokens: 1024, system: systemPrompt, messages: apiMessages, tools: [MEMORY_TOOL] };
+  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: systemPrompt, messages: apiMessages, tools: [MEMORY_TOOL] };
   const stream = anthropic.messages.stream(params);
   stream.on('text', (text) => { fullText += text; res.write(`data: ${JSON.stringify({ text })}\n\n`); });
   const finalMsg = await stream.finalMessage();
@@ -242,7 +242,7 @@ async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   const tools = useGmail ? [MEMORY_TOOL, ...GMAIL_TOOLS] : [MEMORY_TOOL];
   tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 5 });
   let fullText = '';
-  const params = { model: 'claude-sonnet-4-5', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
+  const params = { model: 'claude-sonnet-4-20250514', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
   const stream = anthropic.messages.stream(params);
   stream.on('streamEvent', (event) => {
     if (event.type === 'content_block_start' && event.content_block?.type === 'server_tool_use' && event.content_block?.name === 'web_search') {
@@ -345,7 +345,7 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const apiMessages = history.slice(-20).map(m => {
+    const apiMessages = history.slice(-10).map(m => {
       const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
       if (imgMatch) {
         const [, mediaType, base64] = imgMatch;
