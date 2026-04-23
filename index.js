@@ -345,7 +345,7 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const apiMessages = history.slice(-10).map(m => {
+    const apiMessages = history.slice(-20).map(m => {
       const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
       if (imgMatch) {
         const [, mediaType, base64] = imgMatch;
