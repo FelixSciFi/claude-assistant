@@ -373,18 +373,23 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
 
     function totalChars(msgs) {
       return msgs.reduce((sum, m) => {
-        const text = Array.isArray(m.content)
-          ? m.content.filter(p => p.type === 'text').map(p => p.text).join('')
-          : m.content;
-        return sum + text.length;
+        if (Array.isArray(m.content)) {
+          return sum + m.content.reduce((s, p) => {
+            if (p.type === 'text') return s + p.text.length;
+            if (p.type === 'image') return s + (p.source?.data?.length || 0); // 计入图片 base64 大小
+            return s;
+          }, 0);
+        }
+        return sum + m.content.length;
       }, 0);
     }
 
     // 逐步缩减历史，直到总字符量在预算内
+    // 即使缩减到只剩当前消息仍超出，也直接发送（图片本身太大时无法进一步压缩）
     let apiMessages;
     for (const size of [8, 4, 2, 1]) {
       apiMessages = buildApiMessages(history.slice(-size));
-      if (totalChars(apiMessages) <= CHAR_BUDGET) break;
+      if (totalChars(apiMessages) <= CHAR_BUDGET || size === 1) break;
     }
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
