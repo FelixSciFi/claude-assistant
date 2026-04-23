@@ -331,13 +331,9 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     }
   }
 
-  db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'user', userMessageContent);
   db.prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
   const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
-  if (conv.is_work === 0 && conv.title === '新对话') {
-    const titleText = message || file.originalname;
-    db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(titleText.slice(0, 20).trim(), id);
-  }
+  // 先读取历史（不含当前消息），API 成功后再存入
   const history = db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(id);
   const u = user || 'felix';
   const systemPrompt = buildSystemPrompt(u, conv.is_work === 1);
@@ -348,9 +344,13 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     const MAX_MSG_CHARS = 8000;
     const CHAR_BUDGET = 100000; // 约 30K tokens，给 system prompt 和工具留足余量
 
-    function buildApiMessages(histSlice) {
-      const lastIdx = histSlice.length - 1;
-      return histSlice.map((m, i) => {
+    // 将当前消息作为独立对象，不预先存入 DB
+    const currentMsg = { role: 'user', content: userMessageContent };
+
+    function buildApiMessages(histSlice, includeCurrent = true) {
+      const allMsgs = includeCurrent ? [...histSlice, currentMsg] : histSlice;
+      const lastIdx = allMsgs.length - 1;
+      return allMsgs.map((m, i) => {
         const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
         if (imgMatch) {
           const textPart = m.content.replace(/\[图片:[^\]]+\]<image_data[^/]*\/>/, '').trim();
@@ -376,7 +376,7 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
         if (Array.isArray(m.content)) {
           return sum + m.content.reduce((s, p) => {
             if (p.type === 'text') return s + p.text.length;
-            if (p.type === 'image') return s + (p.source?.data?.length || 0); // 计入图片 base64 大小
+            if (p.type === 'image') return s + (p.source?.data?.length || 0);
             return s;
           }, 0);
         }
@@ -385,14 +385,19 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     }
 
     // 逐步缩减历史，直到总字符量在预算内
-    // 即使缩减到只剩当前消息仍超出，也直接发送（图片本身太大时无法进一步压缩）
     let apiMessages;
-    for (const size of [8, 4, 2, 1]) {
-      apiMessages = buildApiMessages(history.slice(-size));
-      if (totalChars(apiMessages) <= CHAR_BUDGET || size === 1) break;
+    for (const size of [8, 4, 2, 0]) {
+      apiMessages = buildApiMessages(history.slice(-size || undefined), true);
+      if (totalChars(apiMessages) <= CHAR_BUDGET || size === 0) break;
     }
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
+    // API 成功后才存入用户消息和 AI 回复
+    db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'user', userMessageContent);
+    if (conv.is_work === 0 && conv.title === '新对话') {
+      const titleText = message || (file ? file.originalname : '');
+      db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(titleText.slice(0, 20).trim(), id);
+    }
     db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', cleanResponse);
     const updated = db.prepare('SELECT title FROM conversations WHERE id = ?').get(id);
     res.write(`data: ${JSON.stringify({ done: true, title: updated.title, cleanText: cleanResponse })}\n\n`);
