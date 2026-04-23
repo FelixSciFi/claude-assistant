@@ -345,8 +345,9 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const recentHistory = history.slice(-10);
+    const recentHistory = history.slice(-8);
     const lastIdx = recentHistory.length - 1;
+    const MAX_MSG_CHARS = 8000;
     const apiMessages = recentHistory.map((m, i) => {
       const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
       if (imgMatch) {
@@ -363,7 +364,11 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
           return { role: m.role, content: placeholder };
         }
       }
-      return { role: m.role, content: m.content };
+      // 截断过长的消息内容，防止超出 token 上限
+      const text = m.content.length > MAX_MSG_CHARS
+        ? m.content.slice(0, MAX_MSG_CHARS) + '\n...(内容已截断)'
+        : m.content;
+      return { role: m.role, content: text };
     });
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
