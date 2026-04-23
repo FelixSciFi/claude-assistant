@@ -345,31 +345,47 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const recentHistory = history.slice(-8);
-    const lastIdx = recentHistory.length - 1;
     const MAX_MSG_CHARS = 8000;
-    const apiMessages = recentHistory.map((m, i) => {
-      const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
-      if (imgMatch) {
-        const textPart = m.content.replace(/\[图片:[^\]]+\]<image_data[^/]*\/>/, '').trim();
-        // 只有最后一条消息才发送真实图片，历史图片替换为占位符节省 token
-        if (i === lastIdx && m.role === 'user') {
-          const [, mediaType, base64] = imgMatch;
-          const parts = [];
-          if (textPart) parts.push({ type: 'text', text: textPart });
-          parts.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
-          return { role: m.role, content: parts };
-        } else {
-          const placeholder = textPart ? `${textPart}\n[图片]` : '[图片]';
-          return { role: m.role, content: placeholder };
+    const CHAR_BUDGET = 100000; // 约 30K tokens，给 system prompt 和工具留足余量
+
+    function buildApiMessages(histSlice) {
+      const lastIdx = histSlice.length - 1;
+      return histSlice.map((m, i) => {
+        const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
+        if (imgMatch) {
+          const textPart = m.content.replace(/\[图片:[^\]]+\]<image_data[^/]*\/>/, '').trim();
+          if (i === lastIdx && m.role === 'user') {
+            const [, mediaType, base64] = imgMatch;
+            const parts = [];
+            if (textPart) parts.push({ type: 'text', text: textPart });
+            parts.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
+            return { role: m.role, content: parts };
+          } else {
+            return { role: m.role, content: textPart ? `${textPart}\n[图片]` : '[图片]' };
+          }
         }
-      }
-      // 截断过长的消息内容，防止超出 token 上限
-      const text = m.content.length > MAX_MSG_CHARS
-        ? m.content.slice(0, MAX_MSG_CHARS) + '\n...(内容已截断)'
-        : m.content;
-      return { role: m.role, content: text };
-    });
+        const text = m.content.length > MAX_MSG_CHARS
+          ? m.content.slice(0, MAX_MSG_CHARS) + '\n...(内容已截断)'
+          : m.content;
+        return { role: m.role, content: text };
+      });
+    }
+
+    function totalChars(msgs) {
+      return msgs.reduce((sum, m) => {
+        const text = Array.isArray(m.content)
+          ? m.content.filter(p => p.type === 'text').map(p => p.text).join('')
+          : m.content;
+        return sum + text.length;
+      }, 0);
+    }
+
+    // 逐步缩减历史，直到总字符量在预算内
+    let apiMessages;
+    for (const size of [8, 4, 2, 1]) {
+      apiMessages = buildApiMessages(history.slice(-size));
+      if (totalChars(apiMessages) <= CHAR_BUDGET) break;
+    }
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
     db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(id, 'assistant', cleanResponse);
