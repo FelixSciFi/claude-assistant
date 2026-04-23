@@ -345,15 +345,23 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    const apiMessages = history.slice(-10).map(m => {
+    const recentHistory = history.slice(-10);
+    const lastIdx = recentHistory.length - 1;
+    const apiMessages = recentHistory.map((m, i) => {
       const imgMatch = m.content.match(/\[图片:[^\]]+\]<image_data type="([^"]+)" base64="([^"]+)"\/>/);
       if (imgMatch) {
-        const [, mediaType, base64] = imgMatch;
         const textPart = m.content.replace(/\[图片:[^\]]+\]<image_data[^/]*\/>/, '').trim();
-        const parts = [];
-        if (textPart) parts.push({ type: 'text', text: textPart });
-        parts.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
-        return { role: m.role, content: parts };
+        // 只有最后一条消息才发送真实图片，历史图片替换为占位符节省 token
+        if (i === lastIdx && m.role === 'user') {
+          const [, mediaType, base64] = imgMatch;
+          const parts = [];
+          if (textPart) parts.push({ type: 'text', text: textPart });
+          parts.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
+          return { role: m.role, content: parts };
+        } else {
+          const placeholder = textPart ? `${textPart}\n[图片]` : '[图片]';
+          return { role: m.role, content: placeholder };
+        }
       }
       return { role: m.role, content: m.content };
     });
