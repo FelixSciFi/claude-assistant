@@ -3,10 +3,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const Database = require('better-sqlite3');
 const { exec } = require('child_process');
 const multer = require('multer');
-const cron = require('node-cron');
 const { isGmailConfigured, searchEmails, sendEmail, getEmailContent } = require('./gmail');
-const { queryERP } = require('./erp');
-const { createSpreadsheet, writeSheet, appendSheet, readSheet, clearSheet } = require('./sheets');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -59,19 +56,6 @@ db.exec(`
     remind_days INTEGER DEFAULT 3,
     status TEXT DEFAULT 'active',
     last_activity DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user TEXT NOT NULL DEFAULT 'felix',
-    name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    cron_expr TEXT NOT NULL,
-    task_type TEXT NOT NULL DEFAULT 'erp_report',
-    task_config TEXT NOT NULL DEFAULT '{}',
-    enabled INTEGER DEFAULT 1,
-    last_run DATETIME,
-    last_result TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
@@ -185,140 +169,6 @@ const GMAIL_TOOLS = [
   }
 ];
 
-const ERP_TOOLS = [
-  {
-    name: 'query_erp',
-    description: '查询公司 ERP 数据库（只读）。支持 africa-items（进销存）和 africa-finance（财务）两个库。金额字段存实际值×100需除以100，软删除加 deleted=0，状态取流程表最新一条。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        sql: { type: 'string', description: 'SELECT 或 WITH 开头的 SQL 语句' },
-        database: { type: 'string', enum: ['africa-items', 'africa-finance'], description: '目标数据库，默认 africa-items' }
-      },
-      required: ['sql']
-    }
-  }
-];
-
-const SHEETS_TOOLS = [
-  {
-    name: 'create_spreadsheet',
-    description: '创建新的 Google 表格，返回 id 和 url',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: '表格标题' },
-        sheet_titles: { type: 'array', items: { type: 'string' }, description: 'Sheet 名称列表，默认 ["Sheet1"]' }
-      },
-      required: ['title']
-    }
-  },
-  {
-    name: 'write_sheet',
-    description: '向 Google 表格写入数据（覆盖指定区域）',
-    input_schema: {
-      type: 'object',
-      properties: {
-        spreadsheet_id: { type: 'string' },
-        range: { type: 'string', description: '如 "Sheet1!A1" 或 "Sheet1!A1:Z100"' },
-        values: { type: 'array', items: { type: 'array' }, description: '二维数组，每行是一个数组' }
-      },
-      required: ['spreadsheet_id', 'range', 'values']
-    }
-  },
-  {
-    name: 'append_sheet',
-    description: '向 Google 表格追加行',
-    input_schema: {
-      type: 'object',
-      properties: {
-        spreadsheet_id: { type: 'string' },
-        range: { type: 'string', description: '如 "Sheet1!A:Z"' },
-        values: { type: 'array', items: { type: 'array' } }
-      },
-      required: ['spreadsheet_id', 'range', 'values']
-    }
-  },
-  {
-    name: 'read_sheet',
-    description: '读取 Google 表格数据',
-    input_schema: {
-      type: 'object',
-      properties: {
-        spreadsheet_id: { type: 'string' },
-        range: { type: 'string', description: '如 "Sheet1!A1:Z100"' }
-      },
-      required: ['spreadsheet_id', 'range']
-    }
-  }
-];
-
-const SCHEDULE_TOOLS = [
-  {
-    name: 'manage_schedule',
-    description: '管理定时任务（每日报表等）。创建时需指定 cron 表达式（如 "0 8 * * *" 表示每天8点）和 task_config。task_config 字段：sql（查询语句）、database（africa-items/africa-finance）、spreadsheet_id（为空则自动创建）、sheet_name、mode（append追加/overwrite覆盖）、notify_email（true/false）、email_to。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        action: { type: 'string', enum: ['list', 'create', 'update', 'delete', 'enable', 'disable', 'run_now'] },
-        id: { type: 'number', description: '任务ID（update/delete/enable/disable/run_now时填）' },
-        name: { type: 'string', description: '任务名称（create时填）' },
-        description: { type: 'string', description: '任务说明' },
-        cron_expr: { type: 'string', description: 'Cron 表达式，如 "0 8 * * *"（create/update时填）' },
-        task_config: { type: 'object', description: '任务配置（create/update时填）' }
-      },
-      required: ['action']
-    }
-  }
-];
-
-async function runScheduledTask(task) {
-  const config = JSON.parse(task.task_config);
-  let result = '';
-  try {
-    // 1. 查询 ERP
-    const rows = await queryERP(config.sql, config.database || 'africa-items');
-    if (!rows || rows.length === 0) {
-      result = '查询结果为空，跳过写入';
-      return result;
-    }
-    // 2. 写入 Google Sheets
-    let spreadsheetId = config.spreadsheet_id;
-    let sheetUrl = '';
-    const sheetName = config.sheet_name || 'Report';
-    const today = new Date().toLocaleDateString('zh-CN');
-    if (!spreadsheetId) {
-      const created = await createSpreadsheet(`${task.name} - ${today}`, [sheetName]);
-      spreadsheetId = created.id;
-      sheetUrl = created.url;
-      // 保存 spreadsheet_id 回任务配置
-      const newConfig = { ...config, spreadsheet_id: spreadsheetId };
-      db.prepare('UPDATE scheduled_tasks SET task_config = ? WHERE id = ?').run(JSON.stringify(newConfig), task.id);
-    } else {
-      sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
-    }
-    const headers = Object.keys(rows[0]);
-    const dataRows = rows.map(r => headers.map(h => r[h] ?? ''));
-    const values = [headers, ...dataRows];
-    if (config.mode === 'append') {
-      await appendSheet(spreadsheetId, `${sheetName}!A:Z`, dataRows);
-    } else {
-      await writeSheet(spreadsheetId, `${sheetName}!A1`, values);
-    }
-    result = `写入 ${rows.length} 行数据到 ${sheetUrl}`;
-    // 3. 发邮件通知
-    if (config.notify_email && config.email_to) {
-      const subject = `[定时报表] ${task.name} - ${today}`;
-      const body = `${task.name} 已生成\n\n查看表格：${sheetUrl}\n\n共 ${rows.length} 条记录。`;
-      await sendEmail(config.email_to, subject, body);
-      result += `，邮件已发送至 ${config.email_to}`;
-    }
-  } catch (err) {
-    result = `执行失败: ${err.message}`;
-  }
-  return result;
-}
-
 async function executeTool(name, input, user) {
   try {
     if (name === 'update_memory') {
@@ -336,77 +186,6 @@ async function executeTool(name, input, user) {
     if (name === 'get_email_content') {
       const content = await getEmailContent(input.message_id);
       return JSON.stringify(content);
-    }
-    if (name === 'query_erp') {
-      const rows = await queryERP(input.sql, input.database || 'africa-items');
-      if (!rows || rows.length === 0) return '查询结果为空。';
-      const maxRows = 100;
-      const truncated = rows.length > maxRows;
-      const display = rows.slice(0, maxRows);
-      const text = JSON.stringify(display, null, 0);
-      return (truncated ? `（结果已截断，共 ${rows.length} 行，显示前 ${maxRows} 行）\n` : '') + text;
-    }
-    if (name === 'create_spreadsheet') {
-      const res = await createSpreadsheet(input.title, input.sheet_titles || ['Sheet1']);
-      return `表格已创建：${res.url}\nID: ${res.id}`;
-    }
-    if (name === 'write_sheet') {
-      const res = await writeSheet(input.spreadsheet_id, input.range, input.values);
-      return `已写入 ${res.rows} 行到 ${input.range}`;
-    }
-    if (name === 'append_sheet') {
-      const res = await appendSheet(input.spreadsheet_id, input.range, input.values);
-      return `已追加 ${res.rows} 行，区域：${res.updatedRange || input.range}`;
-    }
-    if (name === 'read_sheet') {
-      const rows = await readSheet(input.spreadsheet_id, input.range);
-      return rows.length === 0 ? '表格为空。' : JSON.stringify(rows);
-    }
-    if (name === 'manage_schedule') {
-      const { action, id } = input;
-      if (action === 'list') {
-        const tasks = db.prepare('SELECT id, name, description, cron_expr, enabled, last_run, last_result FROM scheduled_tasks WHERE user = ? ORDER BY created_at DESC').all(user);
-        return tasks.length === 0 ? '没有定时任务。' : JSON.stringify(tasks);
-      }
-      if (action === 'create') {
-        if (!cron.validate(input.cron_expr)) return '无效的 cron 表达式。';
-        const r = db.prepare('INSERT INTO scheduled_tasks (user, name, description, cron_expr, task_config) VALUES (?, ?, ?, ?, ?)').run(user, input.name, input.description || '', input.cron_expr, JSON.stringify(input.task_config || {}));
-        registerCronTask(r.lastInsertRowid);
-        return `定时任务 #${r.lastInsertRowid} 已创建：${input.name}（${input.cron_expr}）`;
-      }
-      if (action === 'update') {
-        const updates = [];
-        const vals = [];
-        if (input.name) { updates.push('name = ?'); vals.push(input.name); }
-        if (input.cron_expr) {
-          if (!cron.validate(input.cron_expr)) return '无效的 cron 表达式。';
-          updates.push('cron_expr = ?'); vals.push(input.cron_expr);
-        }
-        if (input.description !== undefined) { updates.push('description = ?'); vals.push(input.description); }
-        if (input.task_config) { updates.push('task_config = ?'); vals.push(JSON.stringify(input.task_config)); }
-        if (updates.length === 0) return '没有要更新的字段。';
-        vals.push(id, user);
-        db.prepare(`UPDATE scheduled_tasks SET ${updates.join(', ')} WHERE id = ? AND user = ?`).run(...vals);
-        reloadCronTask(id);
-        return `任务 #${id} 已更新。`;
-      }
-      if (action === 'delete') {
-        db.prepare('DELETE FROM scheduled_tasks WHERE id = ? AND user = ?').run(id, user);
-        stopCronTask(id);
-        return `任务 #${id} 已删除。`;
-      }
-      if (action === 'enable' || action === 'disable') {
-        db.prepare('UPDATE scheduled_tasks SET enabled = ? WHERE id = ? AND user = ?').run(action === 'enable' ? 1 : 0, id, user);
-        reloadCronTask(id);
-        return `任务 #${id} 已${action === 'enable' ? '启用' : '停用'}。`;
-      }
-      if (action === 'run_now') {
-        const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ? AND user = ?').get(id, user);
-        if (!task) return '任务不存在。';
-        const result = await runScheduledTask(task);
-        db.prepare('UPDATE scheduled_tasks SET last_run = CURRENT_TIMESTAMP, last_result = ? WHERE id = ?').run(result, id);
-        return `任务执行完成：${result}`;
-      }
     }
     if (name === 'manage_tracked') {
       if (input.action === 'list') {
@@ -433,49 +212,8 @@ const TOOL_LABELS = {
   get_email_content: '📄 读取邮件内容',
   send_email: '📤 发送邮件',
   manage_tracked: '📋 管理跟踪事项',
-  web_search: '🔍 搜索网络',
-  query_erp: '🗄️ 查询ERP数据库',
-  create_spreadsheet: '📊 创建Google表格',
-  write_sheet: '📝 写入表格',
-  append_sheet: '📝 追加表格',
-  read_sheet: '📖 读取表格',
-  manage_schedule: '⏰ 管理定时任务'
+  web_search: '🔍 搜索网络'
 };
-
-// ── 定时任务调度器 ──────────────────────────────────────────────
-const activeCronJobs = new Map();
-
-function registerCronTask(taskId) {
-  const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ? AND enabled = 1').get(taskId);
-  if (!task) return;
-  stopCronTask(taskId);
-  if (!cron.validate(task.cron_expr)) return;
-  const job = cron.schedule(task.cron_expr, async () => {
-    console.log(`[cron] 执行任务 #${task.id}: ${task.name}`);
-    const result = await runScheduledTask(task);
-    db.prepare('UPDATE scheduled_tasks SET last_run = CURRENT_TIMESTAMP, last_result = ? WHERE id = ?').run(result, task.id);
-    console.log(`[cron] 任务 #${task.id} 完成: ${result}`);
-  }, { timezone: 'Africa/Dakar' });
-  activeCronJobs.set(taskId, job);
-}
-
-function stopCronTask(taskId) {
-  const job = activeCronJobs.get(taskId);
-  if (job) { job.stop(); activeCronJobs.delete(taskId); }
-}
-
-function reloadCronTask(taskId) {
-  stopCronTask(taskId);
-  registerCronTask(taskId);
-}
-
-// 启动时加载所有已启用任务
-function loadAllCronTasks() {
-  const tasks = db.prepare('SELECT id FROM scheduled_tasks WHERE enabled = 1').all();
-  tasks.forEach(t => registerCronTask(t.id));
-  if (tasks.length > 0) console.log(`[cron] 已加载 ${tasks.length} 个定时任务`);
-}
-loadAllCronTasks();
 
 async function runBriefingChat(apiMessages, systemPrompt, user, res) {
   let fullText = '';
@@ -501,9 +239,7 @@ async function runBriefingChat(apiMessages, systemPrompt, user, res) {
 async function runChat(apiMessages, systemPrompt, user, res, depth = 0) {
   if (depth > 3) return '';
   const useGmail = user === 'felix' && isGmailConfigured();
-  const tools = useGmail
-    ? [MEMORY_TOOL, ...GMAIL_TOOLS, ...ERP_TOOLS, ...SHEETS_TOOLS, ...SCHEDULE_TOOLS]
-    : [MEMORY_TOOL];
+  const tools = useGmail ? [MEMORY_TOOL, ...GMAIL_TOOLS] : [MEMORY_TOOL];
   tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 5 });
   let fullText = '';
   const params = { model: 'claude-sonnet-4-20250514', max_tokens: 2048, system: systemPrompt, messages: apiMessages, tools };
