@@ -1,8 +1,7 @@
 // 运行此脚本完成 Google OAuth 授权（Gmail + Sheets）
 // 用法：node gmail_auth.js
 const { google } = require('googleapis');
-const http = require('http');
-const url = require('url');
+const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
 
@@ -15,20 +14,19 @@ const SCOPES = [
 ];
 
 const creds = JSON.parse(fs.readFileSync(CREDS_PATH, 'utf8'));
-const auth = new google.auth.OAuth2(creds.client_id, creds.client_secret, 'http://localhost:8765');
+const auth = new google.auth.OAuth2(creds.client_id, creds.client_secret, 'http://localhost');
 
 const authUrl = auth.generateAuthUrl({ access_type: 'offline', scope: SCOPES, prompt: 'consent' });
-console.log('\n请在浏览器打开以下链接完成授权：\n');
+console.log('\n请在浏览器打开此链接授权：\n');
 console.log(authUrl);
-console.log('\n等待授权回调...');
+console.log('\n授权后把浏览器地址栏完整URL粘贴到这里: ');
 
-const server = http.createServer(async (req, res) => {
-  const qs = url.parse(req.url, true).query;
-  if (!qs.code) { res.end('No code'); return; }
-  res.end('<h2>授权成功，可以关闭此页面</h2>');
-  server.close();
-  const { tokens } = await auth.getToken(qs.code);
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+rl.question('', async (input) => {
+  rl.close();
+  const code = new URL(input).searchParams.get('code');
+  const { tokens } = await auth.getToken(code);
   fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
-  console.log('\n✅ 授权成功，token 已保存至', TOKEN_PATH);
+  console.log('Token 已保存！');
   process.exit(0);
-}).listen(8765);
+});
