@@ -2,8 +2,12 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const Database = require('better-sqlite3');
 const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 const { isGmailConfigured, searchEmails, sendEmail, getEmailContent } = require('./gmail');
+
+const MEMORY_BACKUP_PATH = path.join(__dirname, 'memory_backup.json');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -84,7 +88,50 @@ function upsertMemoryDoc(user, type, content) {
   } else if (type === 'work') {
     db.prepare('INSERT INTO memory_doc (user, work) VALUES (?, ?) ON CONFLICT(user) DO UPDATE SET work = excluded.work, updated_at = CURRENT_TIMESTAMP').run(user, content);
   }
+  saveMemoryBackup();
 }
+
+function saveMemoryBackup() {
+  try {
+    const rows = db.prepare('SELECT user, personal, work, updated_at FROM memory_doc').all();
+    fs.writeFileSync(MEMORY_BACKUP_PATH, JSON.stringify(rows, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[backup] 写入 memory_backup.json 失败:', e.message);
+  }
+}
+
+function restoreMemoryFromBackup() {
+  if (!fs.existsSync(MEMORY_BACKUP_PATH)) return;
+  try {
+    const rows = JSON.parse(fs.readFileSync(MEMORY_BACKUP_PATH, 'utf8'));
+    let restored = 0;
+    for (const row of rows) {
+      const existing = db.prepare('SELECT user FROM memory_doc WHERE user = ?').get(row.user);
+      if (!existing) {
+        db.prepare('INSERT INTO memory_doc (user, personal, work) VALUES (?, ?, ?)').run(row.user, row.personal || '', row.work || '');
+        restored++;
+      }
+    }
+    if (restored > 0) console.log(`[backup] 从备份恢复了 ${restored} 个用户的记忆`);
+  } catch (e) {
+    console.error('[backup] 恢复记忆备份失败:', e.message);
+  }
+}
+
+// 启动时恢复记忆
+restoreMemoryFromBackup();
+
+// 每小时自动 git push 备份到 GitHub
+setInterval(() => {
+  exec(
+    'cd /root/claude-assistant && git add memory_backup.json && git diff --cached --quiet || (git commit -m "auto: memory backup" && git push origin main)',
+    (err, stdout, stderr) => {
+      if (err && !stderr.includes('nothing to commit')) {
+        console.error('[backup] git push 失败:', stderr);
+      }
+    }
+  );
+}, 60 * 60 * 1000);
 
 const SYSTEM_PROMPTS = {
   felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。你有权访问Felix的Gmail，可搜索邮件、发邮件、管理跟踪事项。发邮件前必须先展示草稿让Felix确认再调用发送工具。当对话中出现值得长期记住的重要信息时，使用update_memory工具更新对应记忆（传入该类型完整的最新文本，会覆盖原有内容）。`,
@@ -384,11 +431,13 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
       }, 0);
     }
 
-    // 逐步缩减历史，直到总字符量在预算内
-    let apiMessages;
-    for (const size of [8, 4, 2, 0]) {
-      apiMessages = buildApiMessages(history.slice(-size || undefined), true);
-      if (totalChars(apiMessages) <= CHAR_BUDGET || size === 0) break;
+    // 从全部历史开始，逐条裁掉最老的消息，直到进入字符预算
+    // 文字对话可保留几十轮完整上下文，仅图片等大消息时才被裁减
+    let histSlice = [...history];
+    let apiMessages = buildApiMessages(histSlice, true);
+    while (totalChars(apiMessages) > CHAR_BUDGET && histSlice.length > 0) {
+      histSlice = histSlice.slice(1);
+      apiMessages = buildApiMessages(histSlice, true);
     }
     const fullResponse = await runChat(apiMessages, systemPrompt, u, res);
     const cleanResponse = fullResponse.replace(/\n\*[💾📧📤📋🔍].*?\*\n/g, '').trim();
