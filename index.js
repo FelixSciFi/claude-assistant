@@ -134,8 +134,8 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 const SYSTEM_PROMPTS = {
-  felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。你有权访问Felix的Gmail，可搜索邮件、发邮件、管理跟踪事项。发邮件前必须先展示草稿让Felix确认再调用发送工具。当对话中出现值得长期记住的重要信息时，使用update_memory工具更新对应记忆（传入该类型完整的最新文本，会覆盖原有内容）。`,
-  nicole: `你是Nicole的私人AI助手，Nicole是Felix的妻子，目前在达喀尔生活。回答风格：温和体贴，中文为主。当对话中出现值得长期记住的重要信息时，使用update_memory工具更新对应记忆（传入该类型完整的最新文本，会覆盖原有内容）。`
+  felix: `你是Felix的私人AI助手。Felix是一位在塞内加尔达喀尔经营公司的中国企业家，团队约10人，使用WhatsApp和Facebook广告获客。回答风格：简洁直接，中文为主。你有权访问Felix的Gmail，可搜索邮件、发邮件、管理跟踪事项。发邮件前必须先展示草稿让Felix确认再调用发送工具。\n\n【记忆规则】你的记忆是主要的长期上下文，对话历史只保留最近10轮。每当对话中出现以下情况，立即调用update_memory更新记忆（传入该类型完整的最新文本覆盖原有内容）：人物关系/团队信息变化、业务进展或决策、偏好或习惯、待跟进事项、任何Felix明确说"记住"的内容。宁可多记不可少记。`,
+  nicole: `你是Nicole的私人AI助手，Nicole是Felix的妻子，目前在达喀尔生活。回答风格：温和体贴，中文为主。\n\n【记忆规则】你的记忆是主要的长期上下文，对话历史只保留最近10轮。每当对话中出现以下情况，立即调用update_memory更新记忆：家庭成员信息、宝宝成长情况、生活习惯偏好、健康相关信息、任何Nicole明确说"记住"的内容。宁可多记不可少记。`
 };
 
 function buildSystemPrompt(user, isWork = false) {
@@ -431,11 +431,10 @@ app.post('/api/conversations/:id/chat', upload.single('file'), async (req, res) 
       }, 0);
     }
 
-    // 从全部历史开始，逐条裁掉最老的消息，直到进入字符预算
-    // 文字对话可保留几十轮完整上下文，仅图片等大消息时才被裁减
-    let histSlice = [...history];
+    // 取最近 20 条历史（10轮对话），超出字符预算时逐步缩减
+    let histSlice = history.slice(-20);
     let apiMessages = buildApiMessages(histSlice, true);
-    while (totalChars(apiMessages) > CHAR_BUDGET && histSlice.length > 0) {
+    while (totalChars(apiMessages) > CHAR_BUDGET && histSlice.length > 1) {
       histSlice = histSlice.slice(1);
       apiMessages = buildApiMessages(histSlice, true);
     }
