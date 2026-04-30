@@ -106,9 +106,14 @@ function restoreMemoryFromBackup() {
     const rows = JSON.parse(fs.readFileSync(MEMORY_BACKUP_PATH, 'utf8'));
     let restored = 0;
     for (const row of rows) {
-      const existing = db.prepare('SELECT user FROM memory_doc WHERE user = ?').get(row.user);
+      const existing = db.prepare('SELECT user, updated_at FROM memory_doc WHERE user = ?').get(row.user);
+      const backupNewer = !existing || (row.updated_at && existing.updated_at && row.updated_at > existing.updated_at);
       if (!existing) {
         db.prepare('INSERT INTO memory_doc (user, personal, work) VALUES (?, ?, ?)').run(row.user, row.personal || '', row.work || '');
+        restored++;
+      } else if (backupNewer) {
+        // 备份比数据库更新，覆盖恢复
+        db.prepare('UPDATE memory_doc SET personal = ?, work = ?, updated_at = ? WHERE user = ?').run(row.personal || '', row.work || '', row.updated_at, row.user);
         restored++;
       }
     }
